@@ -1787,9 +1787,61 @@ body::after {
 }
 .lightbox-close:hover { background: rgba(147,51,234,0.6); transform: scale(1.1); }
 .np-card { cursor: zoom-in; }
+
+#maintenanceOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  backdrop-filter: blur(14px);
+  background: rgba(10,0,20,0.7);
+  z-index: 9999;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  animation: splashIn 0.6s ease;
+}
+
+@keyframes splashIn {
+  0% { opacity: 0; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.maintenance-content {
+  text-align: center;
+  color: white;
+}
+
+.loader {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.1);
+  border-top: 4px solid #a855f7;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 30px #a855f7;
+  margin: auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
 </style>
 </head>
 <body>
+<div id="maintenanceOverlay">
+  <div class="maintenance-content">
+
+    <div class="loader"></div>
+    <h1>Wartungsarbeiten</h1>
+    <p>Nova Systems wird optimiert...</p>
+
+    <canvas id="novaGame" width="320" height="200"></canvas>
+
+  </div>
+</div>
 
 <!-- Background orbs -->
 <div class="bg-orbs">
@@ -2796,18 +2848,192 @@ document.querySelectorAll('#page-nova-prism .np-card').forEach(function(card) {
   if (fl) fl.href = hGeneral;
 })(); 
 
-</script>   
+</script>
+<script>
+const MAINTENANCE_MODE = true;
+
+const overlay = document.getElementById("maintenanceOverlay");
+const canvas = document.getElementById("novaGame");
+
+if (MAINTENANCE_MODE && overlay && canvas) {
+  overlay.style.display = "flex";
+
+  const ctx = canvas.getContext("2d");
+
+  // ===== GAME STATE =====
+  let player = { x: 50, y: 150, vy: 0 };
+  let gravity = 0.6;
+
+  let obstacles = [];
+  let particles = [];
+
+  let score = 0;
+  let gameSpeed = 3;
+  let gameOver = false;
+
+  let multiplier = 1;
+  let combo = 0;
+  let lastJumpTime = 0;
+
+  let obstacleTimer = 0;
+
+  // ===== SOUND =====
+  const jumpSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
+
+  // ===== SPAWN OBSTACLES =====
+  function spawnObstacle() {
+    const type = Math.random();
+
+    if (type < 0.5) {
+      obstacles.push({ x: 320, y: 170, w: 20, h: 30 });
+    } else {
+      obstacles.push({ x: 320, y: 130, w: 20, h: 20 });
+    }
+  }
+
+  // ===== PARTICLES =====
+  function spawnParticles() {
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: Math.random() * 320,
+        y: Math.random() * 200,
+        r: Math.random() * 2,
+        alpha: Math.random()
+      });
+    }
+  }
+
+  // ===== PLAYER =====
+  function drawPlayer() {
+    ctx.fillStyle = "#a855f7";
+    ctx.fillRect(player.x, player.y, 15, 15);
+    ctx.fillRect(player.x + 3, player.y - 5, 9, 5);
+  }
+
+  // ===== MAIN LOOP =====
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // STOP GAME
+    if (gameOver) {
+      ctx.fillStyle = "rgba(255,0,0,0.9)";
+      ctx.font = "22px sans-serif";
+      ctx.fillText("GAME OVER", 85, 100);
+
+      ctx.font = "12px sans-serif";
+      ctx.fillText("Click to restart", 95, 120);
+
+      return;
+    }
+
+    // PARTICLES (limit memory)
+    spawnParticles();
+    particles = particles.slice(-100);
+
+    particles.forEach(p => {
+      ctx.fillStyle = "rgba(168,85,247," + p.alpha + ")";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // PHYSICS
+    player.vy += gravity;
+    player.y += player.vy;
+
+    if (player.y > 150) {
+      player.y = 150;
+      player.vy = 0;
+    }
+
+    // GLOW EFFECT
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#a855f7";
+    drawPlayer();
+    ctx.shadowBlur = 0;
+
+    // OBSTACLES
+    obstacleTimer++;
+
+    if (obstacleTimer > Math.max(20, 60 - gameSpeed * 5)) {
+      spawnObstacle();
+      obstacleTimer = 0;
+    }
+
+    obstacles.forEach(o => {
+      o.x -= gameSpeed;
+
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+
+      // COLLISION
+      if (
+        player.x < o.x + o.w &&
+        player.x + 15 > o.x &&
+        player.y < o.y + o.h &&
+        player.y + 15 > o.y
+      ) {
+        gameOver = true;
+
+        canvas.style.transform = "translateX(5px)";
+        setTimeout(() => canvas.style.transform = "translateX(-5px)", 50);
+        setTimeout(() => canvas.style.transform = "translateX(0)", 100);
+      }
+    });
+
+    obstacles = obstacles.filter(o => o.x > -20);
+
+    // SCORE SYSTEM
+    score += multiplier;
+
+    ctx.fillStyle = "#c084fc";
+    ctx.font = "14px monospace";
+    ctx.fillText("Score: " + Math.floor(score), 10, 20);
+    ctx.fillText("x" + multiplier.toFixed(1), 10, 40);
+
+    // DIFFICULTY SCALING
+    if (score % 200 === 0) {
+      gameSpeed += 0.3;
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  // ===== JUMP SYSTEM =====
+  function jump() {
+    if (gameOver) return;
+
+    if (player.y >= 150) {
+      player.vy = -10;
+      jumpSound.currentTime = 0;
+      jumpSound.play();
+
+      const now = Date.now();
+
+      if (now - lastJumpTime < 400) {
+        combo++;
+        multiplier = Math.min(5, 1 + combo * 0.5);
+      } else {
+        combo = 0;
+        multiplier = 1;
+      }
+
+      lastJumpTime = now;
+    }
+  }
+
+  // ===== INPUT =====
+  window.addEventListener("keydown", jump);
+  window.addEventListener("click", jump);
+
+  // RESTART
+  window.addEventListener("click", () => {
+    if (gameOver) location.reload();
+  });
+
+  // START
+  draw();
+}
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
